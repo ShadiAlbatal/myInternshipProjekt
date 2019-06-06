@@ -1,0 +1,199 @@
+pipeline {
+    agent {
+            label 'master-label'
+        }
+    stages {
+        stage('version') {
+            steps {
+                script {
+                    def output = sh returnStdout: true, script: 'mono /GitVersion/GitVersion.exe'
+                    def fullSemVer = (output =~ /.*"FullSemVer":"(.*)",/)[0][1]
+                    println fullSemVer
+                    env.SVL = fullSemVer
+                    println SVL
+                }
+            }
+        }
+        stage('Build') {
+
+            steps {
+                dir ('graze'){
+                    slackSend (color: '#00ff19', message: "STARTED: Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]' (${env.BUILD_URL})")
+                    sh '''
+                        ./gradlew build --rerun-tasks --console=plain -Pversion=$SVL
+                    sh '''
+                }
+            }
+        }
+        stage('Graze') {
+            failFast true
+            parallel {
+                stage('Test & Dist') {
+                    stages {
+                        stage('Test') {
+
+                            steps {
+                                dir ('graze'){
+                                    sh '''
+                                        echo "junit tests"
+                                        ./gradlew test --rerun-tasks --console=plain
+                                        echo "JacocoTestReport tests"
+                                        ./gradlew jacocoTestReport --rerun-tasks --console=plain
+                                        echo "check tests"
+                                        ./gradlew check --rerun-tasks --console=plain
+                                    sh '''
+                                        xunit (
+                                            thresholds: [ skipped(failureThreshold: '0'), failed(failureThreshold: '0') ],
+                                            tools: [
+                                                JUnit(pattern: 'build/test-results/test/*.xml')
+                                            ]
+                                        )
+                                }
+                            }
+                        }
+                        stage('UNIX Dist') {
+
+                            steps {
+                                dir ('graze'){
+                                    sh '''
+                                        echo "Tar Distr"
+                                        ./gradlew distTar --rerun-tasks --console=plain -Pversion=$SVL
+                                    sh '''
+                                }
+                            }
+                        }
+                        stage('WIN Dist') {
+
+                            steps {
+                                dir ('graze'){
+                                    sh '''
+                                        echo "Zip Distr"
+                                        ./gradlew distZip --rerun-tasks --console=plain -Pversion=$SVL
+                                    sh '''
+                                }
+                            }
+                        }
+                    }
+                }
+                stage('Docs') {
+
+                    steps {
+                        dir ('graze'){
+                            sh '''
+                                echo "Groovy Doc"
+                                echo "./gradlew groovydoc --rerun-tasks --console=plain"
+                                echo "Java Doc"
+                                ./gradlew javadoc --rerun-tasks --console=plain
+                            sh '''
+                        }
+                    }
+                }
+            }
+        }
+         stage('Analysis') {
+            failFast true
+            parallel {
+                stage ('checkstyle') {
+
+                    steps {
+                        dir ('graze') {
+                        sh '''
+                        ./gradlew checkstyleMain --rerun-tasks --console=plain
+                        ./gradlew checkstyleTest --rerun-tasks --console=plain
+                        '''
+                            recordIssues enabledForFailure: true, tool: checkStyle(pattern: 'build/reports/checkstyle/*.xml')
+
+                        }
+                    }
+                }
+                stage ('pmd') {
+
+                    steps {
+                        dir ('graze'){
+                        sh '''
+                            ./gradlew pmdMain --rerun-tasks --console=plain
+                            ./gradlew pmdTest --rerun-tasks --console=plain
+                        '''
+                            recordIssues enabledForFailure: true, tool: pmdParser(pattern: 'build/reports/pmd/*.xml')
+
+                        }
+                    }
+                }
+                stage ('findbugs') {
+
+                    steps {
+                        dir ('graze'){
+                        sh '''
+                        ./gradlew findbugsMain --rerun-tasks --console=plain
+                        ./gradlew findbugsTest --rerun-tasks --console=plain
+                        '''
+                            recordIssues enabledForFailure: true, tool: spotBugs(pattern: 'build/reports/findbugs/*.xml')
+
+                        }
+                    }
+                }
+                stage ('cpd') {
+
+                    steps {
+                        dir ('graze'){
+                        sh '''
+                        ./gradlew cpd --rerun-tasks --console=plain
+                        '''
+                        recordIssues enabledForFailure: true, tool: cpd(pattern: 'build/reports/cpd/cpdCheck.xml')
+                        }
+                    }
+                }
+            }
+        }
+         stage('Deploy ') {
+            failFast true
+            parallel {
+                stage ('Deploy to artifactory') {
+
+                    steps {
+                        withCredentials([string(credentialsId: 'JenkinsArtifactory', variable: 'secret')]) {
+                            dir ('graze'){
+                                //sh "sudo ./gradlew build --rerun-tasks"
+                                //sh "sudo ./gradlew publish -P ARTIFACTORY_USER='Sha' -P ARTIFACTORY_SECRET=${secret} --rerun-tasks --console=plain"
+                            }
+                        }
+                    }
+                }
+                stage('Deploy to workspace') {
+                    steps {
+                        archiveArtifacts artifacts: 'graze/build/distributions/*.tar', allowEmptyArchive: false, fingerprint: true, onlyIfSuccessful: true
+
+                    }
+                }
+            }
+        }
+
+    }
+    post {
+        always{
+            junit testResults: 'graze/build/test-results/test/*.xml'
+
+            recordIssues enabledForFailure: true, tools: [mavenConsole()]
+            jacoco()
+        }
+        success {
+            slackSend (color: '#0000ff', message: "success: Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]' (${env.BUILD_URL})")
+            sh '''
+                echo "success"
+                echo "sudo docker stop GrazeAgent"
+            '''
+        }
+        failure {
+            slackSend (color: '#ff0000', message: "failure: Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]' (${env.BUILD_URL})")
+            sh '''
+                echo "Failed"
+            '''
+        }
+        aborted {
+            slackSend (color: '#ff0000', message: "aborted: Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]' (${env.BUILD_URL})")
+            sh '''
+                echo "aborted"
+            '''
+        }
+    }
+}

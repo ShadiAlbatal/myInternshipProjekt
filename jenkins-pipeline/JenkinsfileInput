@@ -1,0 +1,59 @@
+pipeline {
+    agent any
+    stages {
+        stage('checkout') {
+            steps {
+                checkout scm
+            }
+        }
+        stage('confirm') {
+            steps {
+                sh 'pwd && ls'
+                dir ('graze'){
+                    sh '''
+                        pwd && ls
+                        ./gradlew tasks
+                    '''
+                }
+            }
+        }
+        stage('message') {
+            steps {
+                script {
+                    env.Task = input message: 'select the task category', ok: 'Deploy!', parameters: [choice(name:'branch to depl', choices: "Build\nTest\nDistribution\nDocumentation", description: 'trying it')]
+                }
+            }
+        }
+        stage('select') {
+            steps {
+                script {
+                    env.gradle = ./gradlew ${cat}
+                    if (Task == 'Build'){
+                        env.cat = input message: 'Deploy!', ok: 'Deploy!', parameters: [choice(name:'Build', choices: "init\nwrapper", description: 'trying it')]
+                        sh './gradlew ${cat}'
+                    }
+                    else if (Task == 'Test'){
+                        env.cat = input message: 'Deploy!', ok: 'Deploy!', parameters: [choice(name:'test', choices: "check\ntest", description: 'trying it')]
+                        sh './gradlew ${cat}'
+                    }
+                    else if (Task == 'Distribution'){
+                        env.cat = input message: 'Deploy!', ok: 'Deploy!', parameters: [choice(name:'Distribution', choices: "distTar\ndistZip", description: 'trying it')]
+                        sh './gradlew ${cat}'
+                    }
+                    else if (Task == 'Documentation'){
+                        env.cat = input message: 'Deploy!', ok: 'Deploy!', parameters: [choice(name:'Documentation', choices: "groovydoc\njavadoc", description: 'trying it')]
+                        sh './gradlew ${cat}'
+                    }
+                    else {
+                        sh 'echo ${cat}'
+                    }
+                }
+            }
+        }
+    }
+    post {
+        always {
+            echo 'I will always say Hello again!'
+        }
+    }
+}
