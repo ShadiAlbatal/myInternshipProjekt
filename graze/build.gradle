@@ -1,0 +1,25 @@
+plugins {
+    id 'groovy'
+    id 'jacoco'
+    id 'application'
+}
+
+repositories {
+    jcenter()
+}
+
+dependencies {
+   compile 'org.codehaus.groovy:groovy-all:2.5.2'
+   testCompile 'junit:junit:4.12'
+}
+
+jacocoTestReport {
+    reports {
+        html.destination file("${buildDir}/jacoco")
+    }
+}
+
+build.dependsOn('jacocoTestReport')
+jacocoTestReport.dependsOn('test')
+
+mainClassName = "graze.Main"

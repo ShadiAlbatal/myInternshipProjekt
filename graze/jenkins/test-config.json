@@ -1,0 +1,14 @@
+{
+    "canvas.enabled": false,
+    "loop.king": true,
+    "loop.sleep": 0,
+    "pasture.height": 30,
+    "pasture.width": 30,
+    "actors": {
+        "graze.actor.imp.RCow": 3,
+        "graze.actor.imp.TtogttoghanCow": 3,
+        "graze.actor.imp.TheBestCowOffalTime": 3,
+        "graze.actor.imp.SmartCow": 3,
+        "graze.actor.imp.Wolf": 3
+    }
+}

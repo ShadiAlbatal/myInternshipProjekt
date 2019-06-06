@@ -1,0 +1,9 @@
+build/
+.gradle/
+bin/
+local-test/
+.settings
+.classpath
+.project
+.vscode
+testRun.sh

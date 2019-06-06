@@ -1,0 +1,93 @@
+pipeline {
+    agent {
+        label 'docker'
+    }
+
+    stages {
+        stage ('checkout') {
+            steps {
+                checkout scm
+            }
+        }
+        
+        stage ("Integrate") {
+            when {
+                expression {
+                return env.BRANCH_NAME != 'master'
+                }
+            }
+
+            steps {
+                withCredentials([sshUserPrivateKey(credentialsId: 'thi-ssh', keyFileVariable: 'SSH_KEY')]) {
+                sh 'echo ssh -i $SSH_KEY -l git \\"\\$@\\" > with_ssh.sh'
+                sh 'chmod +x with_ssh.sh'
+                withEnv(['GIT_SSH=with_ssh.sh']) {
+                    sh "git remote set-branches --add origin master"
+                    sh "git fetch"
+                    sh "git checkout -b ${env.BRANCH_NAME}"
+                    sh "git rebase origin/master"
+                    sh "git checkout master"
+                    sh "git merge --ff-only ${env.BRANCH_NAME}"
+                }
+                }
+            }
+        }
+
+        stage ('build') {
+            steps {
+                sh './gradlew clean build'
+            }
+        }
+
+        stage ('installDist') {
+            steps {
+                sh './gradlew installDist'
+            }
+        }
+
+        stage ("Publish") {
+            when {
+                expression {
+                return env.BRANCH_NAME =~ /ready\/.*/
+                }
+            }
+
+            steps {
+                withCredentials([sshUserPrivateKey(credentialsId: 'thi-ssh', keyFileVariable: 'SSH_KEY')]) {
+                    sh 'echo ssh -i $SSH_KEY -l git \\"\\$@\\" > with_ssh.sh'
+                    sh 'chmod +x with_ssh.sh'
+                    withEnv(['GIT_SSH=with_ssh.sh']) {
+                        sh "git push origin master"
+                        sh "git push origin :${env.BRANCH_NAME}"
+                    }
+                }
+            }
+        }
+
+        stage ('contest') {
+            steps {
+                script {
+                    // Run the game 100 times and store the results
+                    def results = [:]
+                    100.times {
+                        def winner = sh(script: "build/install/graze/bin/graze jenkins/test-config.json", returnStdout: true)
+                        winner = winner.trim()
+                        results[winner] = (results[winner] ?: 0) + 1
+                        results.each { println "${it.key}: ${it.value}"}
+                    }
+
+                    // Format the results to a CSV
+                    def resultText = "winner,wins\n"
+                    results.each { winner, wins ->
+                        resultText += "${winner},${wins}\n"
+                    }
+
+                    // Write the formatted text to a file
+                    writeFile file: 'jenkins/results.csv', text: resultText
+                }
+
+                archiveArtifacts 'jenkins/results.csv'
+            }
+        }
+    }
+}
