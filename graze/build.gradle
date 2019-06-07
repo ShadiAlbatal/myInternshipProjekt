@@ -1,9 +1,56 @@
+import java.text.SimpleDateFormat
+
+buildscript {
+    repositories {
+        mavenCentral()
+        jcenter()
+    }
+
+    dependencies {
+        classpath 'de.aaschmid:gradle-cpd-plugin:1.2'
+    }
+}
+
+buildscript {
+  repositories {
+    maven {
+      url "https://plugins.gradle.org/m2/"
+    }
+  }
+  dependencies {
+    classpath "org.jfrog.buildinfo:build-info-extractor-gradle:4.9.5"
+  }
+}
+
+// Plugins
 plugins {
     id 'groovy'
     id 'jacoco'
     id 'application'
-}
+    id 'maven-publish'
+    id 'checkstyle'
+    id 'pmd'
+    id 'findbugs'
+    id 'java'
+    id 'signing'
+    id "org.sonarqube" version "2.7"
 
+}
+//    apply plugin: 'org.sonarqube'
+    apply plugin: 'cpd'
+    apply plugin: "com.jfrog.artifactory"
+//    apply plugin:  'com.jfrog.bintray'
+
+
+
+
+// Project properties
+group = 'org.shadi'
+
+ext.EXAMPLE_PROPERTY_3 = project.findProperty("EXAMPLE_PROPERTY_3") ? project.EXAMPLE_PROPERTY_3.trim() : "This COMMAND LINE property could've been set using -P EXAMPLE_PROPERTY=\"a value\""
+ext.EXAMPLE_PROPERTY_4 = "This PROJECT property is set in the build.gradle and overrides all the others"
+
+// Dependencies
 repositories {
     jcenter()
 }
@@ -11,15 +58,214 @@ repositories {
 dependencies {
    compile 'org.codehaus.groovy:groovy-all:2.5.2'
    testCompile 'junit:junit:4.12'
-}
+    compile 'org.sonarsource.scanner.api:sonar-scanner-api:2.12.0.1661'
+    }
 
+
+
+// Test coverage
 jacocoTestReport {
-    reports {
-        html.destination file("${buildDir}/jacoco")
+  reports {
+    html.enabled = true
+    xml.enabled = true
+    csv.enabled = false
+
+    // reports {
+    // executionData = fileTree("${buildDir}/jacoco")
+    //  }
+  }
+}
+test.finalizedBy jacocoTestReport
+
+
+// Test coverage Verification
+jacocoTestCoverageVerification {
+    violationRules {
+        rule {
+            limit {
+                minimum = 0.3
+            }
+        }
+
+        rule {
+            enabled = false
+            element = 'CLASS'
+            includes = ['org.gradle.*']
+
+            limit {
+                counter = 'LINE'
+                value = 'TOTALCOUNT'
+                maximum = 0.3
+            }
+        }
     }
 }
 
 build.dependsOn('jacocoTestReport')
 jacocoTestReport.dependsOn('test')
 
+// Application
 mainClassName = "graze.Main"
+
+// packageDist
+task packageDist (type: Zip) {
+    group 'Publishing'
+    description 'Packages the dist'
+    dependsOn 'installDist'
+    finalizedBy 'artifactory'
+
+    archiveFileName = "graze.zip"
+    destinationDirectory = file("$buildDir/dist")
+
+    from "$buildDir/install/graze"
+}
+artifactory {
+    publish {
+        contextUrl = 'https://artifactory.training.praqma.cloud/artifactory'
+        repository {
+            repoKey = "sha-maven-local"
+                 username = project.findProperty('ARTIFACTORY_USER') ?: ''
+                 password = project.findProperty('ARTIFACTORY_SECRET') ?: ''
+        }
+    }
+}
+
+
+publishing {
+    publications {
+        'distZip' (MavenPublication) {
+            groupId = project.group
+            artifactId = 'graze-dist'
+            version = project.version
+
+            artifact packageDist
+        }
+/*         'component' (MavenPublication) {
+            groupId = project.group
+            artifactId = 'graze'
+            version = project.version
+
+            from components.java
+        } */
+    }
+}
+
+
+// checkstyle
+checkstyle {
+    toolVersion '7.8.1'
+    configFile file("config/checkstyle/checkstyle.xml")
+    ignoreFailures = true
+    showViolations = true
+    reportsDir = file("$project.buildDir/reports/checkstyle")
+}
+checkstyleMain {
+    source ='src/main/groovy'
+}
+checkstyleTest {
+    source ='src/test/groovy'
+}
+tasks.withType(Checkstyle) {
+    reports {
+        xml.enabled true
+        html.enabled true
+    }
+}
+
+// findbugs
+findbugs {
+    ignoreFailures = false
+    toolVersion = "3.0.1"
+    reportsDir = file("$project.buildDir/reports/findbugs")
+    effort = "max"
+    ignoreFailures = true
+
+}
+tasks.withType(FindBugs) {
+    reports {
+        xml.enabled true
+        html.enabled false
+    }
+}
+
+// pmd
+pmd {
+    toolVersion = '5.4.0'
+    consoleOutput= true
+    ignoreFailures = false
+    ruleSetFiles = files("config/pmd/rules-pmd.xml")
+    reportsDir = file("build/reports/pmd")
+}
+pmdMain {
+    source ='src/main/groovy'
+}
+pmdTest {
+    source ='src/test/groovy'
+}
+
+tasks.withType(Pmd){
+    reports {
+        xml.enabled true
+        html.enabled true
+    }
+}
+
+// cpdCheck
+cpdCheck {
+    ignoreFailures = true
+    language = 'groovy'
+    reports {
+        text.enabled = false
+        xml.enabled = true
+    }
+    source = sourceSets.main.groovy // only java, groovy and scala classes in 'main' sourceSets
+}
+
+
+groovydoc {
+    description 'generating the groovy doc and and with customized sitting'
+    // Set document and window titles.
+    docTitle = "Graze Documentation"
+    windowTitle = "Automatic generated GroovyDoc"
+    destinationDir = file("build/documentation")
+    // Set custom header. We will include this
+    // in the changed classDocName.html file.
+    header = '''\
+        <img src="http://www.mrhaki.com/images/haki-logo-black-64.png"/>
+        <h2>Sample project</h2>
+        '''.stripIndent()
+
+    // Set custom footer for generated documentation.
+    footer = """\
+        <div class="custom-footer">
+            Generated on: ${new Date().format('yyyy-MM-dd HH:mm:ss')}
+        </div>""".stripIndent()
+
+}
+task packagegroovydoc(type: Jar) {
+    from groovydoc
+    description 'package the groovy docs'
+    classifier = 'groovydoc'
+}
+
+
+sonarqube{
+
+    check
+
+    properties {
+        property "sonar.groovy.binaries", "build/classes/groovy"
+        property "sonar.groovy.projectName", "LHMDL"
+        property "sonar.groovy.projectKey", "org.sonarqube:jacocoCodeCoverage"
+        property "sonar.groovy.jacoco.reportPath", "build/jacoco/test.exec"
+        property "sonar.groovy.login","5a5ad4c39cff2002108386e3191b65752a060de9"
+        property "sonar.groovy.coverage.jacoco.xmlReportPaths", "build/reports/jacoco/test/*.xml"
+        property "sonar.groovy.sources","src/main"
+        property "sonar.groovy.tests","src/test"
+        property "sonar.groovy.spotbugs.reportPaths", "build/reports/findbugs/*.xml"
+        property "sonar.groovy.pmd.reportPaths", "build/reports/pmd/*.xml"
+        property "sonar.jagroovy.checkstyle.reportPaths", "build/reports/checkstyle/*.xml"
+        property "sonar.junit.reportPaths", "build/test-results/test/*.xml"
+    }
+
+}
