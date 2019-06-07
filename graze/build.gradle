@@ -114,9 +114,6 @@ task packageDist (type: Zip) {
     dependsOn 'installDist'
     finalizedBy 'artifactory'
 
-    archiveFileName = "graze.zip"
-    destinationDirectory = file("$buildDir/dist")
-
     from "$buildDir/install/graze"
 }
 artifactory {
