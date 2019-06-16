@@ -12,7 +12,7 @@ pool:
 steps:
 - task: Gradle@2
   inputs:
-    workingDirectory: '/graze/gradle/wrapper'
+    workingDirectory: '/jjkl'
     tasks: 'build'
     publishJUnitResults: true
     testResultsFiles: '**/TEST-*.xml'
