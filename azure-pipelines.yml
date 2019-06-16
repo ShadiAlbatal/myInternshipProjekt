@@ -12,7 +12,7 @@ pool:
 steps:
 - task: Gradle@2
   inputs:
-    workingDirectory: '/home/vsts/work/1/s/gradlew'
+    workingDirectory: '/home/vsts/work/1/s/graze/gradlew'
     tasks: 'build'
     publishJUnitResults: true
     testResultsFiles: '**/TEST-*.xml'
